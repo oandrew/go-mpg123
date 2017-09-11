@@ -3,6 +3,7 @@ package mpg123
 import (
 	"errors"
 	"io"
+	"io/ioutil"
 )
 
 // Reader implements on-the-fly mp3 decoding
@@ -11,6 +12,8 @@ type Reader struct {
 	input        io.Reader
 	h            *Handle
 	feedBuf      []byte
+	nextOffset   int64
+	totalRead    int64
 	bytesSinceOk int
 	maxBadBytes  int
 	needMore     bool
@@ -103,11 +106,20 @@ func (r *Reader) Read(buf []byte) (int, error) {
 		}
 
 	}()
+	if r.nextOffset > r.totalRead {
+		n, err := io.CopyN(ioutil.Discard, r.input, r.nextOffset-r.totalRead)
+		r.totalRead += n
+		if err != nil {
+			return 0, err
+		}
+	}
 	for r.bytesSinceOk < r.maxBadBytes {
 		var feed []byte
 		if r.needMore {
 			r.needMore = false
 			feedLen, err := r.input.Read(r.feedBuf)
+			r.totalRead += int64(feedLen)
+			r.nextOffset = r.totalRead
 			if feedLen == 0 && err != nil {
 				return 0, err
 			}
@@ -142,15 +154,23 @@ func (r *Reader) Read(buf []byte) (int, error) {
 }
 
 // Seek sets the offset in samples of the next Read.
-// Underlying io.Reader needs to implement io.Seeker.
+// If underlying reader is not io.Seeker only io.SeekStart and io.SeekCurrent
+// with positive offsets are supported
 func (r *Reader) Seek(sampleOffset int64, whence int) (int64, error) {
-	if s, ok := r.input.(io.Seeker); ok {
-		newOffset, inputOffset, err := r.h.FeedSeek(sampleOffset, whence)
-		if err != nil {
+	newOffset, inputBytesOffset, err := r.h.FeedSeek(sampleOffset, whence)
+	if err != nil {
+		return 0, err
+	}
+	switch ir := r.input.(type) {
+	case io.Seeker:
+		if _, err := ir.Seek(int64(inputBytesOffset), io.SeekStart); err != nil {
 			return 0, err
 		}
-		s.Seek(int64(inputOffset), io.SeekStart)
-		return newOffset, nil
+	default:
+		if inputBytesOffset < r.totalRead {
+			return 0, errors.New("Seeking back is not supported")
+		}
+		r.nextOffset = inputBytesOffset
 	}
-	return 0, nil
+	return newOffset, nil
 }

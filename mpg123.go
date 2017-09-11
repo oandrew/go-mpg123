@@ -135,11 +135,11 @@ func (h *Handle) Decode(in, out []byte) (int, error) {
 
 }
 
-func (h *Handle) FeedSeek(sampleOffset int64, whence int) (newSampleOffset int64, inputOffset int, err error) {
+func (h *Handle) FeedSeek(sampleOffset int64, whence int) (newSampleOffset int64, inputOffset int64, err error) {
 	var byteOffsetC C.off_t
 	ret := C.mpg123_feedseek(h.h, C.off_t(sampleOffset), C.int(whence), &byteOffsetC)
 	if ret >= 0 {
-		return int64(ret), int(byteOffsetC), nil
+		return int64(ret), int64(byteOffsetC), nil
 	} else {
 		return 0, 0, mpgError(C.int(ret))
 	}
