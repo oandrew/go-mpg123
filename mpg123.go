@@ -252,8 +252,11 @@ func convertID3v2String(s *C.mpg123_string) string {
 }
 
 func convertID3v2TextArray(p *C.mpg123_text, size C.size_t) []ID3v2Text {
-	offset := unsafe.Sizeof(p)
+	if p == nil {
+		return make([]ID3v2Text, 0)
+	}
 	res := make([]ID3v2Text, int(size))
+	offset := unsafe.Sizeof(*p)
 	for i := 0; i < len(res); i++ {
 		t := (*C.mpg123_text)(unsafe.Pointer(uintptr(unsafe.Pointer(p)) + offset*uintptr(i)))
 		if t == nil {
